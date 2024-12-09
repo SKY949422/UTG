@@ -1,0 +1,228 @@
+GameName = "UTG"
+
+tab1name = "�𧑐�糼BOSS"
+tab2name = "銝���BOSS"
+tab3name = "�𧑐��BOSS"
+
+local Library = loadstring(game:HttpGet("https://raw.githubusercontent.com/bloodball/-back-ups-for-libs/main/wizard"))()
+
+local GameName = Library:NewWindow(GameName)
+
+local Tab1 = GameName:NewSection(tab1name)
+
+Tab1:CreateButton("boss 1", function(value)
+local args = {
+    [1] = {
+        ["hb"] = {
+            [1] = workspace.DungeonOfDespair:FindFirstChild("1").Enemies.RayAlpha
+        },
+        ["action"] = "hit",
+        ["combo"] = 1,
+        ["c"] = game:GetService("Players").LocalPlayer.Character,
+        ["damage"] = 2000000000000000
+    }
+}
+
+game:GetService("ReplicatedStorage").Remotes.Axe:FireServer(unpack(args))
+end)
+
+Tab1:CreateButton("boss 2", function(value)
+local args = {
+    [1] = {
+        ["hb"] = {
+            [1] = workspace.DungeonOfDespair:FindFirstChild("3").Enemies:FindFirstChild("Tyrant of Rays")
+        },
+        ["action"] = "hit",
+        ["combo"] = 1,
+        ["c"] = game:GetService("Players").LocalPlayer.Character,
+        ["damage"] = 200000000000000
+    }
+}
+
+game:GetService("ReplicatedStorage").Remotes.Axe:FireServer(unpack(args))
+end)
+
+Tab1:CreateButton("boss 3", function(value)
+local args = {
+    [1] = {
+        ["hb"] = {
+            [1] = workspace.DungeonOfDespair:FindFirstChild("4").Enemies:FindFirstChild("God, Seraphim")
+        },
+        ["action"] = "hit",
+        ["combo"] = 1,
+        ["c"] = game:GetService("Players").LocalPlayer.Character,
+        ["damage"] = 200000000000000
+    }
+}
+
+game:GetService("ReplicatedStorage").Remotes.Axe:FireServer(unpack(args))
+end)
+
+Tab1:CreateButton("boss 4", function(value)
+local args = {
+    [1] = {
+        ["hb"] = {
+            [1] = workspace.DungeonOfDespair:FindFirstChild("5").Enemies:FindFirstChild("Ray God")
+        },
+        ["action"] = "hit",
+        ["combo"] = 1,
+        ["c"] = game:GetService("Players").LocalPlayer.Character,
+        ["damage"] = 2000000000000000000000000000000
+    }
+}
+
+game:GetService("ReplicatedStorage").Remotes.Axe:FireServer(unpack(args))
+end)
+
+Tab1:CreateButton("boss 5", function(value)
+
+local args = {
+    [1] = {
+        ["hb"] = {
+            [1] = workspace.DungeonOfDespair:FindFirstChild("6").Enemies:FindFirstChild("Ray Zeta")
+        },
+        ["action"] = "hit",
+        ["combo"] = 1,
+        ["c"] = game:GetService("Players").LocalPlayer.Character,
+        ["damage"] = 20000000000000
+    }
+}
+
+game:GetService("ReplicatedStorage").Remotes.Axe:FireServer(unpack(args))
+end)
+
+local Tab2 = GameName:NewSection(tab2name)
+
+Tab2:CreateButton("Crimson Tyrant", function(value)
+local args = {
+    [1] = {
+        ["hb"] = {
+            [1] = workspace:FindFirstChild("boss's"):FindFirstChild("Crimson Tyrant, The Embodiment of Disaster")
+        },
+        ["action"] = "hit",
+        ["combo"] = 1,
+        ["c"] = game:GetService("Players").LocalPlayer.Character,
+        ["damage"] = 6000000000
+    }
+}
+
+game:GetService("ReplicatedStorage").Remotes.ShibuyaCleave:FireServer(unpack(args))
+end)
+
+Tab2:CreateButton("Tgww", function(value)
+local args = {
+    [1] = {
+        ["hb"] = {
+            [1] = workspace:FindFirstChild("boss's"):FindFirstChild("The God Who Wept")
+        },
+        ["action"] = "hit",
+        ["combo"] = 1,
+        ["c"] = game:GetService("Players").LocalPlayer.Character,
+        ["damage"] = 6000000000000
+    }
+}
+
+game:GetService("ReplicatedStorage").Remotes.ShibuyaCleave:FireServer(unpack(args))
+end)
+
+Tab2:CreateButton("Mahoraga", function(value)
+local args = {
+    [1] = {
+        ["hb"] = {
+            [1] = workspace:FindFirstChild("boss's").Mahoraga
+        },
+        ["action"] = "hit",
+        ["combo"] = 1,
+        ["c"] = game:GetService("Players").LocalPlayer.Character,
+        ["damage"] = 8500000000
+    }
+}
+
+game:GetService("ReplicatedStorage").Remotes.ShibuyaCleave:FireServer(unpack(args))
+end)
+
+Tab2:CreateButton("God, Seraphim", function(value)
+local args = {
+    [1] = {
+        ["hb"] = {
+            [1] = workspace:FindFirstChild("boss's"):FindFirstChild("God, Seraphim")
+        },
+        ["action"] = "hit",
+        ["combo"] = 1,
+        ["c"] = game:GetService("Players").LocalPlayer.Character,
+        ["damage"] = 60000000000
+    }
+}
+
+game:GetService("ReplicatedStorage").Remotes.ShibuyaCleave:FireServer(unpack(args))
+end)
+
+Tab2:CreateButton("Black Silence", function(value)
+local args = {
+    [1] = {
+        ["hb"] = {
+            [1] = workspace:FindFirstChild("boss's"):FindFirstChild("Black Silence")
+        },
+        ["action"] = "hit",
+        ["combo"] = 1,
+        ["c"] = game:GetService("Players").LocalPlayer.Character,
+        ["damage"] = 200000000000
+    }
+}
+
+game:GetService("ReplicatedStorage").Remotes.Axe:FireServer(unpack(args))
+end)
+
+local Tab3 = GameName:NewSection(tab3name)
+
+Tab3:CreateButton("Cerberus", function(value)
+local args = {
+    [1] = {
+        ["hb"] = {
+            [1] = workspace:FindFirstChild("boss's").Cerberus
+        },
+        ["action"] = "hit",
+        ["combo"] = 1,
+        ["c"] = game:GetService("Players").LocalPlayer.Character,
+        ["damage"] = 20000000000
+    }
+}
+
+game:GetService("ReplicatedStorage").Remotes.Axe:FireServer(unpack(args))
+end)
+
+Tab3:CreateButton("Cerberus Twin", function(value)
+local args = {
+    [1] = {
+        ["hb"] = {
+            [1] = workspace:FindFirstChild("boss's"):FindFirstChild("Cerberus Twin")
+        },
+        ["action"] = "hit",
+        ["combo"] = 1,
+        ["c"] = game:GetService("Players").LocalPlayer.Character,
+        ["damage"] = 20000000000
+    }
+}
+
+game:GetService("ReplicatedStorage").Remotes.Axe:FireServer(unpack(args))
+end)
+
+Tab3:CreateButton("Flesh Panopticon", function(value)
+end)
+
+Tab3:CreateButton("Sisyphus Arena", function(value)
+end)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
