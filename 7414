@@ -1,5 +1,5 @@
 -- ========================================================
--- [ 7414 TD MACRO SUITE - 全域智慧 Replay 偵測版 ]
+-- [ 7414 TD MACRO SUITE - 原生代碼 100% 精準適配終極版 ]
 -- ========================================================
 
 -- 全域線程銷毀守衛
@@ -43,7 +43,6 @@ local isPlaying = false
 local recordedActions = {}
 local lastActionTime = 0
 local isListeningKey = false
-local hasEnabledAutoSkip = false
 
 local runPlayMacro
 local applyCustomTheme, bgImageLabel, mainFrameRef
@@ -95,57 +94,25 @@ local function getInstancePosition(inst)
     return pos
 end
 
+-- ★ 依據源碼精準鎖定 workspace.Towers
 local function findNearestTower(targetPos, maxDist)
     local bestTower = nil
     local minDistance = maxDist or 5
+    local towersFolder = workspace:FindFirstChild("Towers")
 
-    local candidateContainers = {
-        workspace:FindFirstChild("Towers"),
-        workspace:FindFirstChild("PlacedTowers"),
-        workspace:FindFirstChild("PlayerTowers"),
-        workspace
-    }
-
-    for _, container in ipairs(candidateContainers) do
-        if container then
-            for _, child in ipairs(container:GetChildren()) do
-                local pos = getInstancePosition(child)
-                if pos and targetPos then
-                    local dist = (pos - targetPos).Magnitude
-                    if dist < minDistance then
-                        minDistance = dist
-                        bestTower = child
-                    end
+    if towersFolder then
+        for _, child in ipairs(towersFolder:GetChildren()) do
+            local pos = getInstancePosition(child)
+            if pos and targetPos then
+                local dist = (pos - targetPos).Magnitude
+                if dist < minDistance then
+                    minDistance = dist
+                    bestTower = child
                 end
             end
         end
-        if bestTower then break end
     end
     return bestTower
-end
-
--- ★ 全域搜尋是否出現結算畫面或重開按鈕
-local function detectGameOver()
-    local playerGui = LocalPlayer:FindFirstChild("PlayerGui")
-    if not playerGui then return false, nil end
-
-    for _, gui in ipairs(playerGui:GetChildren()) do
-        if gui:IsA("ScreenGui") and gui.Enabled and gui.Name ~= "Suite7414UI" and gui.Name ~= "Chat" then
-            for _, desc in ipairs(gui:GetDescendants()) do
-                if desc:IsA("TextLabel") or desc:IsA("TextButton") then
-                    local txt = string.lower(desc.Text or "")
-                    if desc.Visible and (
-                        txt:find("replay") or txt:find("play again") or txt:find("retry") or 
-                        txt:find("victory") or txt:find("defeat") or txt:find("game over") or txt:find("match end")
-                    ) then
-                        local btn = desc:IsA("TextButton") and desc or desc:FindFirstAncestorWhichIsA("TextButton")
-                        return true, btn
-                    end
-                end
-            end
-        end
-    end
-    return false, nil
 end
 
 local function serializeActions(actions)
@@ -247,7 +214,7 @@ local function deleteCurrentMacro()
 end
 
 -- --------------------------------------------------------
--- 2. 純資料捕捉 Hook
+-- 2. 純資料捕捉 Hook (支援 InvokeServer)
 -- --------------------------------------------------------
 local oldNamecall
 oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
@@ -268,7 +235,7 @@ oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
                     cframe = args[2],
                     extra = args[3]
                 })
-                print(string.format("[Macro 捕捉] 放塔 ID: %s (累計: %d 步)", tostring(args[1]), #recordedActions))
+                print(string.format("[Macro 捕捉] 放塔: %s (累計: %d 步)", tostring(args[1]), #recordedActions))
 
             elseif self and self.Name == "UpgradeTower" then
                 local now = os.clock()
@@ -310,69 +277,76 @@ oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
 end))
 
 -- --------------------------------------------------------
--- 3. 自動化背景守護線程 (★ 全域智慧 Replay 與 AutoSkip)
+-- 3. 自動化背景守護線程 (★ 依據源碼 100% 精準對接)
 -- --------------------------------------------------------
 task.spawn(function()
     task.wait(1.5)
     local hasTriggeredReplay = false
 
     while _G.Suite7414_NewGame_Running do
-        task.wait(1.0)
+        task.wait(0.5)
 
-        -- 1. AutoSkip
+        local infoFolder = workspace:FindFirstChild("Info")
+        local messageVal = infoFolder and infoFolder:FindFirstChild("Message") and infoFolder.Message.Value or ""
+        local skipVisVal = infoFolder and infoFolder:FindFirstChild("SkipVis") and infoFolder.SkipVis.Value
+        local isGameOver = (messageVal == "VICTORY" or messageVal == "GAME OVER")
+
+        -- 1. ★ AutoSkip: 檢查 LocalPlayer.AutoSkip.Value，只有在 false 時發送一次
         if UserConfig.autoSkip then
-            if not hasEnabledAutoSkip then
-                pcall(function()
-                    local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
-                    local autoSkipEvent = remotesFolder and remotesFolder:FindFirstChild("AutoSkip")
-                    if autoSkipEvent then
-                        autoSkipEvent:FireServer()
-                        hasEnabledAutoSkip = true
-                        print("[Auto Skip] 已啟用遊戲內 Autoskip！")
-                    end
-                end)
-            end
-
             pcall(function()
-                local remotesFolder = ReplicatedStorage:FindFirstChild("Remotes")
-                local voteSkipEvent = remotesFolder and remotesFolder:FindFirstChild("VoteSkip")
-                if voteSkipEvent then voteSkipEvent:FireServer() end
+                local autoSkipVal = LocalPlayer:FindFirstChild("AutoSkip")
+                if autoSkipVal and not autoSkipVal.Value then
+                    local autoSkipRemote = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("AutoSkip")
+                    if autoSkipRemote then
+                        autoSkipRemote:FireServer()
+                        print("[Auto Skip] 已自動啟用遊戲內 AutoSkip！")
+                    end
+                end
+
+                -- 當波次出現跳過按鈕 (SkipVis 為 true) 時發送 VoteSkip
+                if skipVisVal then
+                    local voteSkipRemote = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("VoteSkip")
+                    if voteSkipRemote then
+                        voteSkipRemote:FireServer()
+                    end
+                end
             end)
         end
 
-        -- 2. ★ Auto Replay (全域智慧結算掃描)
+        -- 2. ★ Auto Replay: 精準依據 infoFolder.Message.Value 觸發 Replay
         if UserConfig.autoReplay then
-            local isOver, replayBtn = detectGameOver()
+            local endScreen = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("GameGui") and LocalPlayer.PlayerGui.GameGui:FindFirstChild("EndScreen")
+            local isScreenVisible = endScreen and endScreen.Visible
 
-            if isOver and not hasTriggeredReplay then
+            if (isGameOver or isScreenVisible) and not hasTriggeredReplay then
                 hasTriggeredReplay = true
-                hasEnabledAutoSkip = false
-                print("[Auto Replay] 偵測到結算畫面，執行自動重開！")
+                print("[Auto Replay] 偵測到遊戲結束 (" .. tostring(messageVal) .. ")，自動發送 Replay 重新開始！")
 
                 task.spawn(function()
-                    for attempt = 1, 5 do
+                    for attempt = 1, 8 do
                         if not _G.Suite7414_NewGame_Running then break end
 
-                        -- 方式 A: 發送 Remote 封包
+                        -- 發送官方 Remote
                         pcall(function()
                             local replayEvent = ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("Replay")
-                            if replayEvent then replayEvent:FireServer() end
+                            if replayEvent then
+                                replayEvent:FireServer()
+                            end
                         end)
 
-                        -- 方式 B: 模擬點擊畫面上的 Replay 按鈕
-                        if replayBtn and typeof(replayBtn) == "Instance" then
+                        -- 點擊 UI 按鈕雙保險
+                        if endScreen and endScreen:FindFirstChild("Replay") then
                             pcall(function()
                                 if firesignal then
-                                    firesignal(replayBtn.MouseButton1Click)
-                                    firesignal(replayBtn.Activated)
+                                    firesignal(endScreen.Replay.Activated)
                                 end
                             end)
                         end
 
-                        task.wait(1.0)
+                        task.wait(0.8)
                     end
                 end)
-            elseif not isOver then
+            elseif not isGameOver and not isScreenVisible then
                 hasTriggeredReplay = false
             end
         end
@@ -880,7 +854,6 @@ end, 1)
 
 createSwitch(pageAutomation, "自動跳過波次 (Auto Skip)", "自動啟用遊戲內 AutoSkip 與 VoteSkip", UserConfig.autoSkip, function(st)
     UserConfig.autoSkip = st
-    hasEnabledAutoSkip = false
     saveUserConfig()
 end, 2)
 
