@@ -1,5 +1,5 @@
 -- ========================================================
--- [ 7414 TD MACRO SUITE - 全自動循環掛機修復版 ]
+-- [ 7414 TD MACRO SUITE - 極速智慧秒升 Turbo 終極版 ]
 -- ========================================================
 
 -- 全域線程銷毀守衛
@@ -31,6 +31,7 @@ local UserConfig = {
     autoReplay = true,
     autoSkip = true,
     autoPlayMacro = true,
+    fastMode = true, -- 極速模式：跳過錄製死等時間，只要有錢立刻秒放秒升
     toggleKey = "RightControl",
     mobileToggle = true,
     uiColor = "0, 200, 120",
@@ -213,7 +214,7 @@ local function deleteCurrentMacro()
 end
 
 -- --------------------------------------------------------
--- 2. 純資料捕捉 Hook (支援 InvokeServer)
+-- 2. 純資料捕捉 Hook
 -- --------------------------------------------------------
 local oldNamecall
 oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
@@ -276,7 +277,7 @@ oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
 end))
 
 -- --------------------------------------------------------
--- 3. 自動化背景守護線程 (★ 自動開局重播 + AutoSkip + AutoReplay)
+-- 3. 自動化背景守護線程
 -- --------------------------------------------------------
 task.spawn(function()
     task.wait(1.5)
@@ -292,7 +293,7 @@ task.spawn(function()
         local skipVisVal = infoFolder and infoFolder:FindFirstChild("SkipVis") and infoFolder.SkipVis.Value
         local isGameOver = (messageVal == "VICTORY" or messageVal == "GAME OVER")
 
-        -- 1. ★ 進圖自動重播巨集 (Auto Play Macro)
+        -- 1. 進圖自動重播巨集
         if waveVal >= 1 and not isGameOver then
             if not hasAutoPlayedThisMatch then
                 hasAutoPlayedThisMatch = true
@@ -300,9 +301,9 @@ task.spawn(function()
 
                 if UserConfig.autoPlayMacro and #recordedActions > 0 and not isPlaying and not isRecording then
                     task.spawn(function()
-                        task.wait(3.5) -- 加載安全緩衝期
+                        task.wait(3.0)
                         if not _G.Suite7414_NewGame_Running then return end
-                        print(string.format("[Auto Play] 偵測到新對局開始，自動執行 Macro「%s」", currentMacroName))
+                        print(string.format("[Auto Play] 偵測到開局，自動啟動 Macro「%s」", currentMacroName))
                         if runPlayMacro then runPlayMacro(true) end
                     end)
                 end
@@ -311,7 +312,7 @@ task.spawn(function()
             hasAutoPlayedThisMatch = false
         end
 
-        -- 2. ★ AutoSkip: 檢查 LocalPlayer.AutoSkip.Value，只有在 false 時發送一次
+        -- 2. AutoSkip 啟用與秒跳
         if UserConfig.autoSkip then
             pcall(function()
                 local autoSkipVal = LocalPlayer:FindFirstChild("AutoSkip")
@@ -331,14 +332,14 @@ task.spawn(function()
             end)
         end
 
-        -- 3. ★ Auto Replay: 結算自動重新開始
+        -- 3. Auto Replay 結算重開
         if UserConfig.autoReplay then
             local endScreen = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("GameGui") and LocalPlayer.PlayerGui.GameGui:FindFirstChild("EndScreen")
             local isScreenVisible = endScreen and endScreen.Visible
 
             if (isGameOver or isScreenVisible) and not hasTriggeredReplay then
                 hasTriggeredReplay = true
-                print("[Auto Replay] 偵測到遊戲結束 (" .. tostring(messageVal) .. ")，自動發送 Replay！")
+                print("[Auto Replay] 偵測到遊戲結束，自動發送 Replay 封包！")
 
                 task.spawn(function()
                     for attempt = 1, 8 do
@@ -370,7 +371,126 @@ task.spawn(function()
 end)
 
 -- --------------------------------------------------------
--- 4. UI 介面構建 (7414 Sidebar Tech Layout)
+-- 4. 巨集核心執行引擎 (★ 極速智慧秒升)
+-- --------------------------------------------------------
+runPlayMacro = function(st)
+    if isRecording then
+        if playCtrl then playCtrl.Set(false) end
+        return
+    end
+
+    if st then
+        if #recordedActions == 0 then
+            warn("[Macro 提示] 目前檔案沒有記錄任何動作！請先開啟錄製。")
+            if playCtrl then playCtrl.Set(false) end
+            return
+        end
+
+        task.spawn(function()
+            isPlaying = true
+            if playCtrl then playCtrl.Set(true) end
+            print(string.format("[Macro 重播開始] 正在執行「%s」，共 %d 步 (極速模式: %s)", currentMacroName, #recordedActions, tostring(UserConfig.fastMode)))
+
+            for i, step in ipairs(recordedActions) do
+                if not isPlaying or not _G.Suite7414_NewGame_Running then break end
+                if playCtrl then
+                    playCtrl.SetDesc(string.format("▶ 重播中 (%d/%d 步)...", i, #recordedActions))
+                end
+
+                -- 如果沒開極速模式才等待原始錄製時間
+                if not UserConfig.fastMode and step.delay > 0 then
+                    local waited = 0
+                    local effectiveDelay = step.delay * UserConfig.macroScale
+                    while waited < effectiveDelay and isPlaying and _G.Suite7414_NewGame_Running do
+                        task.wait(0.05)
+                        waited = waited + 0.05
+                    end
+                else
+                    task.wait(0.05) -- 極速模式每步間隔極短
+                end
+
+                if not isPlaying or not _G.Suite7414_NewGame_Running then break end
+
+                local functionsFolder = ReplicatedStorage:FindFirstChild("Functions")
+                if not functionsFolder then break end
+
+                if step.type == "Place" then
+                    local spawnFunc = functionsFolder:FindFirstChild("SpawnNewTower")
+                    if spawnFunc then
+                        -- 持續發包嘗試放塔，直到成功為止（錢夠了就會放成功）
+                        for attempt = 1, 300 do
+                            if not isPlaying or not _G.Suite7414_NewGame_Running then break end
+
+                            local res = false
+                            pcall(function()
+                                res = spawnFunc:InvokeServer(step.towerId, step.cframe, step.extra)
+                            end)
+
+                            local spawnedTower = findNearestTower(step.cframe.Position, 4)
+                            if res or spawnedTower then
+                                print(string.format("[Macro 成功放塔] (%d/%d)", i, #recordedActions))
+                                break
+                            end
+                            task.wait(0.3) -- 錢不夠時每 0.3 秒嘗試一次
+                        end
+                    end
+
+                elseif step.type == "Upgrade" then
+                    local upgradeFunc = functionsFolder:FindFirstChild("UpgradeTower")
+                    if upgradeFunc then
+                        -- 持續高頻嘗試升級，只要錢夠了立刻完成並秒進下一步
+                        for attempt = 1, 300 do
+                            if not isPlaying or not _G.Suite7414_NewGame_Running then break end
+
+                            local target = findNearestTower(step.position, 4)
+                            if target then
+                                local res = nil
+                                pcall(function()
+                                    res = upgradeFunc:InvokeServer(target)
+                                end)
+                                
+                                if res then
+                                    print(string.format("[Macro 成功升級] (%d/%d)", i, #recordedActions))
+                                    break
+                                end
+                            end
+                            task.wait(0.3) -- 錢不夠時每 0.3 秒嘗試一次，絕不死等幾分鐘
+                        end
+                    end
+
+                elseif step.type == "Sell" then
+                    local sellFunc = functionsFolder:FindFirstChild("SellTower")
+                    if sellFunc then
+                        local target = findNearestTower(step.position, 4)
+                        if target then
+                            pcall(function()
+                                sellFunc:InvokeServer(target)
+                            end)
+                            print(string.format("[Macro 成功販賣] (%d/%d)", i, #recordedActions))
+                        end
+                    end
+                end
+            end
+
+            task.wait(0.8)
+            print("[Macro 重播完成]")
+            isPlaying = false
+            if playCtrl then
+                playCtrl.Set(false)
+                playCtrl.SetDesc(string.format("✓ 重播已完成 (共 %d 步)", #recordedActions))
+            end
+        end)
+    else
+        isPlaying = false
+        if playCtrl then
+            playCtrl.Set(false)
+            playCtrl.SetDesc(string.format("檔案: %s (共 %d 步動作)", currentMacroName, #recordedActions))
+        end
+    end
+end
+
+-- --------------------------------------------------------
+-- 5. UI 介面構建 (7414 Sidebar Tech Layout)
 -- --------------------------------------------------------
 local parentGui = (gethui and gethui()) or CoreGui:FindFirstChild("RobloxGui") or LocalPlayer:WaitForChild("PlayerGui")
 if parentGui:FindFirstChild("Suite7414UI") then
@@ -568,7 +688,7 @@ local function createSwitch(parent, title, desc, defaultVal, callback, order)
     d.Font = Enum.Font.SourceSans
     d.TextXAlignment = Enum.TextXAlignment.Left
     d.ZIndex = 2
-    t.Parent = btn
+    d.Parent = btn
 
     local switchBox = Instance.new("Frame")
     switchBox.Size = UDim2.new(0, 44, 0, 20)
@@ -707,114 +827,6 @@ inputName.FocusLost:Connect(function(enter)
     end
 end)
 
-local playCtrl
-local recordCtrl
-
-runPlayMacro = function(st)
-    if isRecording then
-        if playCtrl then playCtrl.Set(false) end
-        return
-    end
-
-    if st then
-        if #recordedActions == 0 then
-            warn("[Macro 提示] 目前檔案沒有記錄任何動作！請先開啟錄製。")
-            if playCtrl then playCtrl.Set(false) end
-            return
-        end
-
-        task.spawn(function()
-            isPlaying = true
-            if playCtrl then playCtrl.Set(true) end
-            print(string.format("[Macro 重播開始] 正在重播「%s」，共 %d 步...", currentMacroName, #recordedActions))
-
-            for i, step in ipairs(recordedActions) do
-                if not isPlaying or not _G.Suite7414_NewGame_Running then break end
-                if playCtrl then
-                    playCtrl.SetDesc(string.format("▶ 重播中 (%d/%d 步)...", i, #recordedActions))
-                end
-
-                if step.delay > 0 then
-                    local waited = 0
-                    local effectiveDelay = step.delay * UserConfig.macroScale
-                    while waited < effectiveDelay and isPlaying and _G.Suite7414_NewGame_Running do
-                        task.wait(0.05)
-                        waited = waited + 0.05
-                    end
-                end
-
-                if not isPlaying or not _G.Suite7414_NewGame_Running then break end
-
-                local functionsFolder = ReplicatedStorage:FindFirstChild("Functions")
-                if not functionsFolder then break end
-
-                if step.type == "Place" then
-                    local spawnFunc = functionsFolder:FindFirstChild("SpawnNewTower")
-                    if spawnFunc then
-                        for attempt = 1, 10 do
-                            if not isPlaying or not _G.Suite7414_NewGame_Running then break end
-                            pcall(function()
-                                spawnFunc:InvokeServer(step.towerId, step.cframe, step.extra)
-                            end)
-                            
-                            task.wait(0.3)
-                            local spawnedTower = findNearestTower(step.cframe.Position, 4)
-                            if spawnedTower then
-                                print(string.format("[Macro 成功放塔] (%d/%d)", i, #recordedActions))
-                                break
-                            end
-                            task.wait(0.5)
-                        end
-                    end
-
-                elseif step.type == "Upgrade" then
-                    local upgradeFunc = functionsFolder:FindFirstChild("UpgradeTower")
-                    if upgradeFunc then
-                        local target = findNearestTower(step.position, 4)
-                        if target then
-                            for attempt = 1, 6 do
-                                if not isPlaying or not _G.Suite7414_NewGame_Running then break end
-                                pcall(function()
-                                    upgradeFunc:InvokeServer(target)
-                                end)
-                                task.wait(0.3)
-                                break
-                            end
-                            print(string.format("[Macro 成功升級] (%d/%d)", i, #recordedActions))
-                        end
-                    end
-
-                elseif step.type == "Sell" then
-                    local sellFunc = functionsFolder:FindFirstChild("SellTower")
-                    if sellFunc then
-                        local target = findNearestTower(step.position, 4)
-                        if target then
-                            pcall(function()
-                                sellFunc:InvokeServer(target)
-                            end)
-                            print(string.format("[Macro 成功販賣] (%d/%d)", i, #recordedActions))
-                        end
-                    end
-                end
-            end
-
-            task.wait(0.8)
-            print("[Macro 重播完成]")
-            isPlaying = false
-            if playCtrl then
-                playCtrl.Set(false)
-                playCtrl.SetDesc(string.format("✓ 重播已完成 (共 %d 步)", #recordedActions))
-            end
-        end)
-    else
-        isPlaying = false
-        if playCtrl then
-            playCtrl.Set(false)
-            playCtrl.SetDesc(string.format("檔案: %s (共 %d 步動作)", currentMacroName, #recordedActions))
-        end
-    end
-end
-
 playCtrl = createSwitch(pageMacro, "執行重播 (Play Macro)", "當前載入: 0 步動作", false, function(st)
     runPlayMacro(st)
 end, 2)
@@ -823,6 +835,11 @@ createSwitch(pageMacro, "進圖自動重播 (Auto Play Macro)", "進入新對局
     UserConfig.autoPlayMacro = st
     saveUserConfig()
 end, 3)
+
+createSwitch(pageMacro, "極速秒升模式 (Fast Turbo Mode)", "跳過漫長錄製等待，錢一夠立刻秒升秒放（推薦掛機開啟）", UserConfig.fastMode, function(st)
+    UserConfig.fastMode = st
+    saveUserConfig()
+end, 4)
 
 recordCtrl = createSwitch(pageMacro, "錄製操作 (Record Macro)", "點擊開啟後，在遊戲中放塔與升級", false, function(st, ctrl)
     if isPlaying then
@@ -839,7 +856,7 @@ recordCtrl = createSwitch(pageMacro, "錄製操作 (Record Macro)", "點擊開�
         saveCurrentMacro()
         print(string.format("[Macro 結束錄製] 已保存 %d 步動作至「%s」", #recordedActions, currentMacroName))
     end
-end, 4)
+end, 5)
 
 task.spawn(function()
     local lastCount = -1
