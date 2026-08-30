@@ -1,5 +1,5 @@
 -- ========================================================
--- [ 7414 TD MACRO SUITE - 原生代碼 100% 精準適配終極版 ]
+-- [ 7414 TD MACRO SUITE - 全自動循環掛機修復版 ]
 -- ========================================================
 
 -- 全域線程銷毀守衛
@@ -94,7 +94,6 @@ local function getInstancePosition(inst)
     return pos
 end
 
--- ★ 依據源碼精準鎖定 workspace.Towers
 local function findNearestTower(targetPos, maxDist)
     local bestTower = nil
     local minDistance = maxDist or 5
@@ -277,21 +276,42 @@ oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
 end))
 
 -- --------------------------------------------------------
--- 3. 自動化背景守護線程 (★ 依據源碼 100% 精準對接)
+-- 3. 自動化背景守護線程 (★ 自動開局重播 + AutoSkip + AutoReplay)
 -- --------------------------------------------------------
 task.spawn(function()
     task.wait(1.5)
     local hasTriggeredReplay = false
+    local hasAutoPlayedThisMatch = false
 
     while _G.Suite7414_NewGame_Running do
         task.wait(0.5)
 
         local infoFolder = workspace:FindFirstChild("Info")
+        local waveVal = infoFolder and infoFolder:FindFirstChild("Wave") and infoFolder.Wave.Value or 0
         local messageVal = infoFolder and infoFolder:FindFirstChild("Message") and infoFolder.Message.Value or ""
         local skipVisVal = infoFolder and infoFolder:FindFirstChild("SkipVis") and infoFolder.SkipVis.Value
         local isGameOver = (messageVal == "VICTORY" or messageVal == "GAME OVER")
 
-        -- 1. ★ AutoSkip: 檢查 LocalPlayer.AutoSkip.Value，只有在 false 時發送一次
+        -- 1. ★ 進圖自動重播巨集 (Auto Play Macro)
+        if waveVal >= 1 and not isGameOver then
+            if not hasAutoPlayedThisMatch then
+                hasAutoPlayedThisMatch = true
+                hasTriggeredReplay = false
+
+                if UserConfig.autoPlayMacro and #recordedActions > 0 and not isPlaying and not isRecording then
+                    task.spawn(function()
+                        task.wait(3.5) -- 加載安全緩衝期
+                        if not _G.Suite7414_NewGame_Running then return end
+                        print(string.format("[Auto Play] 偵測到新對局開始，自動執行 Macro「%s」", currentMacroName))
+                        if runPlayMacro then runPlayMacro(true) end
+                    end)
+                end
+            end
+        elseif isGameOver or waveVal == 0 then
+            hasAutoPlayedThisMatch = false
+        end
+
+        -- 2. ★ AutoSkip: 檢查 LocalPlayer.AutoSkip.Value，只有在 false 時發送一次
         if UserConfig.autoSkip then
             pcall(function()
                 local autoSkipVal = LocalPlayer:FindFirstChild("AutoSkip")
@@ -299,11 +319,9 @@ task.spawn(function()
                     local autoSkipRemote = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("AutoSkip")
                     if autoSkipRemote then
                         autoSkipRemote:FireServer()
-                        print("[Auto Skip] 已自動啟用遊戲內 AutoSkip！")
                     end
                 end
 
-                -- 當波次出現跳過按鈕 (SkipVis 為 true) 時發送 VoteSkip
                 if skipVisVal then
                     local voteSkipRemote = ReplicatedStorage:FindFirstChild("Remotes") and ReplicatedStorage.Remotes:FindFirstChild("VoteSkip")
                     if voteSkipRemote then
@@ -313,20 +331,19 @@ task.spawn(function()
             end)
         end
 
-        -- 2. ★ Auto Replay: 精準依據 infoFolder.Message.Value 觸發 Replay
+        -- 3. ★ Auto Replay: 結算自動重新開始
         if UserConfig.autoReplay then
             local endScreen = LocalPlayer:FindFirstChild("PlayerGui") and LocalPlayer.PlayerGui:FindFirstChild("GameGui") and LocalPlayer.PlayerGui.GameGui:FindFirstChild("EndScreen")
             local isScreenVisible = endScreen and endScreen.Visible
 
             if (isGameOver or isScreenVisible) and not hasTriggeredReplay then
                 hasTriggeredReplay = true
-                print("[Auto Replay] 偵測到遊戲結束 (" .. tostring(messageVal) .. ")，自動發送 Replay 重新開始！")
+                print("[Auto Replay] 偵測到遊戲結束 (" .. tostring(messageVal) .. ")，自動發送 Replay！")
 
                 task.spawn(function()
                     for attempt = 1, 8 do
                         if not _G.Suite7414_NewGame_Running then break end
 
-                        -- 發送官方 Remote
                         pcall(function()
                             local replayEvent = ReplicatedStorage:FindFirstChild("Events") and ReplicatedStorage.Events:FindFirstChild("Replay")
                             if replayEvent then
@@ -334,7 +351,6 @@ task.spawn(function()
                             end
                         end)
 
-                        -- 點擊 UI 按鈕雙保險
                         if endScreen and endScreen:FindFirstChild("Replay") then
                             pcall(function()
                                 if firesignal then
@@ -552,7 +568,7 @@ local function createSwitch(parent, title, desc, defaultVal, callback, order)
     d.Font = Enum.Font.SourceSans
     d.TextXAlignment = Enum.TextXAlignment.Left
     d.ZIndex = 2
-    d.Parent = btn
+    t.Parent = btn
 
     local switchBox = Instance.new("Frame")
     switchBox.Size = UDim2.new(0, 44, 0, 20)
@@ -803,6 +819,11 @@ playCtrl = createSwitch(pageMacro, "執行重播 (Play Macro)", "當前載入: 0
     runPlayMacro(st)
 end, 2)
 
+createSwitch(pageMacro, "進圖自動重播 (Auto Play Macro)", "進入新對局後自動執行當前選中的 Macro", UserConfig.autoPlayMacro, function(st)
+    UserConfig.autoPlayMacro = st
+    saveUserConfig()
+end, 3)
+
 recordCtrl = createSwitch(pageMacro, "錄製操作 (Record Macro)", "點擊開啟後，在遊戲中放塔與升級", false, function(st, ctrl)
     if isPlaying then
         ctrl.Set(false)
@@ -818,7 +839,7 @@ recordCtrl = createSwitch(pageMacro, "錄製操作 (Record Macro)", "點擊開�
         saveCurrentMacro()
         print(string.format("[Macro 結束錄製] 已保存 %d 步動作至「%s」", #recordedActions, currentMacroName))
     end
-end, 3)
+end, 4)
 
 task.spawn(function()
     local lastCount = -1
