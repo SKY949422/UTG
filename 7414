@@ -1,5 +1,5 @@
 -- ========================================================
--- [ 7414 TD MACRO SUITE - 極速智慧秒升 Turbo 終極版 ]
+-- [ 7414 TD MACRO SUITE - Sorcerer Tower Defense 專用版 ]
 -- ========================================================
 
 -- 全域線程銷毀守衛
@@ -19,8 +19,8 @@ local TweenService = game:GetService("TweenService")
 
 local LocalPlayer = Players.LocalPlayer
 
--- 檔案目錄
-local FOLDER_NAME = "7414_NewTD_Macro"
+-- 檔案目錄 (已更新為 sorcerer tower defense)
+local FOLDER_NAME = "sorcerer tower defense"
 local CONFIG_FILE_PATH = FOLDER_NAME .. "/config.json"
 local currentMacroName = "Default"
 local macroList = {}
@@ -31,7 +31,7 @@ local UserConfig = {
     autoReplay = true,
     autoSkip = true,
     autoPlayMacro = true,
-    fastMode = true, -- 極速模式：跳過錄製死等時間，只要有錢立刻秒放秒升
+    fastMode = true,
     toggleKey = "RightControl",
     mobileToggle = true,
     uiColor = "0, 200, 120",
@@ -371,7 +371,7 @@ task.spawn(function()
 end)
 
 -- --------------------------------------------------------
--- 4. 巨集核心執行引擎 (★ 極速智慧秒升)
+-- 4. 巨集核心執行引擎 (極速智慧秒升)
 -- --------------------------------------------------------
 runPlayMacro = function(st)
     if isRecording then
@@ -397,7 +397,6 @@ runPlayMacro = function(st)
                     playCtrl.SetDesc(string.format("▶ 重播中 (%d/%d 步)...", i, #recordedActions))
                 end
 
-                -- 如果沒開極速模式才等待原始錄製時間
                 if not UserConfig.fastMode and step.delay > 0 then
                     local waited = 0
                     local effectiveDelay = step.delay * UserConfig.macroScale
@@ -406,7 +405,7 @@ runPlayMacro = function(st)
                         waited = waited + 0.05
                     end
                 else
-                    task.wait(0.05) -- 極速模式每步間隔極短
+                    task.wait(0.05)
                 end
 
                 if not isPlaying or not _G.Suite7414_NewGame_Running then break end
@@ -417,7 +416,6 @@ runPlayMacro = function(st)
                 if step.type == "Place" then
                     local spawnFunc = functionsFolder:FindFirstChild("SpawnNewTower")
                     if spawnFunc then
-                        -- 持續發包嘗試放塔，直到成功為止（錢夠了就會放成功）
                         for attempt = 1, 300 do
                             if not isPlaying or not _G.Suite7414_NewGame_Running then break end
 
@@ -431,14 +429,13 @@ runPlayMacro = function(st)
                                 print(string.format("[Macro 成功放塔] (%d/%d)", i, #recordedActions))
                                 break
                             end
-                            task.wait(0.3) -- 錢不夠時每 0.3 秒嘗試一次
+                            task.wait(0.3)
                         end
                     end
 
                 elseif step.type == "Upgrade" then
                     local upgradeFunc = functionsFolder:FindFirstChild("UpgradeTower")
                     if upgradeFunc then
-                        -- 持續高頻嘗試升級，只要錢夠了立刻完成並秒進下一步
                         for attempt = 1, 300 do
                             if not isPlaying or not _G.Suite7414_NewGame_Running then break end
 
@@ -454,7 +451,7 @@ runPlayMacro = function(st)
                                     break
                                 end
                             end
-                            task.wait(0.3) -- 錢不夠時每 0.3 秒嘗試一次，絕不死等幾分鐘
+                            task.wait(0.3)
                         end
                     end
 
