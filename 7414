@@ -60,6 +60,7 @@ local lastActionTime = 0
 local isListeningKey = false
 local matchStartTime = os.time()
 local initialCurrencies = {}
+local initialStateData = {}
 
 local runPlayMacro
 local applyCustomTheme, bgImageLabel, mainFrameRef
@@ -116,8 +117,58 @@ local function formatSessionTime(seconds)
 end
 
 -- --------------------------------------------------------
--- 2. Discord Webhook 戰報推播 (自訂排版版)
+-- 2. State 模組數據解析與 Discord Webhook 戰報推播
 -- --------------------------------------------------------
+local function getGameStateData()
+    local ok, stateMod = pcall(function()
+        local client = ReplicatedStorage:FindFirstChild("Client")
+        return client and client:FindFirstChild("State") and require(client.State)
+    end)
+    if ok and stateMod and stateMod.GetData then
+        local dataOk, data = pcall(function() return stateMod.GetData() end)
+        if dataOk and typeof(data) == "table" then
+            return data
+        end
+    end
+    return nil
+end
+
+local function extractStateCurrencies(data)
+    local cur = {}
+    if not data or typeof(data) ~= "table" then return cur end
+
+    local function add(k, v)
+        if typeof(v) == "number" then cur[k] = v end
+    end
+
+    add("Coins", data.Coins)
+    add("Gems", data.Gems)
+    add("Snowflakes", data.Snowflakes)
+    add("CasinoCoins", data.CasinoCoins)
+    add("CasinoTokens", data.CasinoTokens)
+    add("Ducats", data.Ducats)
+    add("Crystals", data.Crystals)
+    add("SukunaFingers", data.SukunaFingers)
+    add("Summer", data.Summer)
+
+    if data.Evolutions and typeof(data.Evolutions) == "table" then
+        for k, v in pairs(data.Evolutions) do add(k, v) end
+    end
+    if data.Awakens and typeof(data.Awakens) == "table" then
+        for k, v in pairs(data.Awakens) do add(k, v) end
+    end
+    if data.Stock and typeof(data.Stock) == "table" then
+        for k, v in pairs(data.Stock) do add(k, v) end
+    end
+    if data.DisasterIslands and typeof(data.DisasterIslands) == "table" then
+        add("ElementalFragments", data.DisasterIslands.ElementalFragments)
+        add("LavaCore", data.DisasterIslands.LavaCore)
+        add("AbyssalPearl", data.DisasterIslands.AbyssalPearl)
+        add("CursedBloom", data.DisasterIslands.CursedBloom)
+    end
+    return cur
+end
+
 local trackedValues = {
     "Coins", "Gems", "Exp", "Standard", "Wins", "Snowflakes", "StrongestCrate", "BoosterCrate", "CurseCrate",
     "CursedBrain", "CursedChain", "DivineWheel", "ReverseEnergyShard", "EpicShard",
@@ -128,6 +179,8 @@ local trackedValues = {
 
 local function snapshotCurrencies()
     initialCurrencies = {}
+    initialStateData = extractStateCurrencies(getGameStateData())
+
     local function recordVal(name, val)
         if initialCurrencies[name] == nil then
             initialCurrencies[name] = val
@@ -162,59 +215,84 @@ local function sendDiscordWebhook(isVictory, wavesBeaten)
     local sessionDuration = os.time() - _G.Suite7414_SessionStart
     local mapName = (workspace:FindFirstChild("Info") and workspace.Info:FindFirstChild("Map") and workspace.Info.Map.Value)
         or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChildOfClass("Model") and workspace.Map:FindFirstChildOfClass("Model").Name)
-        or "GroundTowerPoints"
+        or "Beach"
 
-    local rewardsText = ""
+    local currentStateData = extractStateCurrencies(getGameStateData())
+    local rewardsList = {}
     local isRareDrop = false
     local processedKeys = {}
 
-    local function checkAndAppend(name, currentVal)
+    local function addRewardEntry(name, delta, total)
         if processedKeys[name] then return end
         processedKeys[name] = true
 
-        local initVal = initialCurrencies[name] or currentVal
-        local lowerName = string.lower(name)
+        local lower = string.lower(name)
+        if lower == "wins" or lower == "win" then
+            table.insert(rewardsList, string.format("• %s: %s", name, tostring(total)))
+        else
+            table.insert(rewardsList, string.format("• %s: +%s (%s)", name, tostring(delta), tostring(total)))
+            if name == "DroppedFingers" or name:find("Crate") or name:find("Shard") or name:find("Wheel") or name:find("Brain") or name:find("Gem") or name:find("Token") then
+                isRareDrop = true
+            end
+        end
+    end
 
-        -- Wins 專屬處理：不顯示 +1，直接顯示總共多少
-        if lowerName == "wins" or lowerName == "win" then
-            rewardsText = rewardsText .. string.format("• %s: %s\n", name, tostring(currentVal))
-        elseif typeof(currentVal) == "number" then
-            local delta = currentVal - initVal
-            if delta > 0 then
-                rewardsText = rewardsText .. string.format("• %s: +%s (%s)\n", name, tostring(delta), tostring(currentVal))
-                if name == "DroppedFingers" or name:find("Crate") or name:find("Shard") or name:find("Wheel") or name:find("Brain") or name:find("Gem") or name:find("Token") then
+    -- 優先對比 State 模組中的真實總資產
+    for key, currentVal in pairs(currentStateData) do
+        local initVal = initialStateData[key] or currentVal
+        local stateDelta = currentVal - initVal
+        local localObj = LocalPlayer:FindFirstChild(key) or (LocalPlayer:FindFirstChild("leaderstats") and LocalPlayer.leaderstats:FindFirstChild(key))
+        local matchDelta = (localObj and localObj:IsA("ValueBase") and typeof(localObj.Value) == "number") and localObj.Value or 0
+
+        if stateDelta > 0 then
+            addRewardEntry(key, stateDelta, currentVal)
+        elseif matchDelta > 0 then
+            -- 若結算時 State 尚未即時寫入，以 State初始值 + 本局獎勵 自動計算真實總額
+            local realTotal = initVal + matchDelta
+            addRewardEntry(key, matchDelta, realTotal)
+        end
+    end
+
+    -- 補齊其他 LocalPlayer 上未列於 State 的獎勵項目 (如 Exp, Wins, Crates 等)
+    for _, name in ipairs(trackedValues) do
+        if not processedKeys[name] then
+            local obj = LocalPlayer:FindFirstChild(name) or (LocalPlayer:FindFirstChild("leaderstats") and LocalPlayer.leaderstats:FindFirstChild(name))
+            if obj and obj:IsA("ValueBase") then
+                local currentVal = obj.Value
+                local initVal = initialCurrencies[name] or currentVal
+                local lowerName = string.lower(name)
+
+                if lowerName == "wins" or lowerName == "win" then
+                    addRewardEntry("Wins", 0, currentVal)
+                elseif typeof(currentVal) == "number" then
+                    local delta = currentVal - initVal
+                    if delta > 0 then
+                        addRewardEntry(name, delta, currentVal)
+                    elseif currentVal > 0 and (initialCurrencies[name] == nil or initialCurrencies[name] == 0) then
+                        addRewardEntry(name, currentVal, currentVal)
+                    end
+                elseif typeof(currentVal) == "string" and currentVal ~= "" and currentVal ~= "None" and currentVal ~= initVal then
+                    table.insert(rewardsList, string.format("• %s: +1 (%s)", name, currentVal))
+                    processedKeys[name] = true
                     isRareDrop = true
                 end
             end
-        elseif typeof(currentVal) == "string" and currentVal ~= "" and currentVal ~= "None" and currentVal ~= initVal then
-            rewardsText = rewardsText .. string.format("• %s: +1 (%s)\n", name, currentVal)
-            isRareDrop = true
         end
     end
 
-    for _, name in ipairs(trackedValues) do
-        local obj = LocalPlayer:FindFirstChild(name)
-        if obj and obj:IsA("ValueBase") then checkAndAppend(name, obj.Value) end
+    -- 若無專屬 Wins 物件，補上全局統計總勝場
+    if not processedKeys["Wins"] and not processedKeys["wins"] and isVictory then
+        local totalWins = _G.Suite7414_Wins
+        table.insert(rewardsList, string.format("• Wins: %d", totalWins))
     end
 
-    local function scanAndAppend(container)
-        if not container then return end
-        for _, child in ipairs(container:GetChildren()) do
-            if child:IsA("ValueBase") then
-                checkAndAppend(child.Name, child.Value)
-            end
-        end
-    end
-
-    scanAndAppend(LocalPlayer:FindFirstChild("leaderstats"))
-    scanAndAppend(LocalPlayer:FindFirstChild("Currencies"))
-
-    if rewardsText == "" then rewardsText = "• 無 (No Extra Drops)" end
-
+    local rewardsText = #rewardsList > 0 and table.concat(rewardsList, "\n") or "• 無 (No Extra Drops)"
     local playerName = UserConfig.webhookHideName and ("||" .. LocalPlayer.Name .. "||") or LocalPlayer.Name
-    local statusText = string.format("結果: %s\n地圖: %s\n耗時: %s", 
-        isVictory and "勝利 (Victory)" or "失敗 (Defeat)", 
-        mapName, 
+
+    local statusText = string.format("結果: %s\n地圖: %s (Wave %s)\n耗時: %s",
+        isVictory and "勝利 (Victory)" or "失敗 (Defeat)",
+        mapName,
+        tostring(wavesBeaten or 20),
         formatTime(matchDuration)
     )
 
@@ -226,7 +304,7 @@ local function sendDiscordWebhook(isVictory, wavesBeaten)
         },
         {
             name = "難度/詞條",
-            value = "Survival / None",
+            value = "Normal / None",
             inline = true
         },
         {
@@ -244,7 +322,7 @@ local function sendDiscordWebhook(isVictory, wavesBeaten)
     if UserConfig.notifySessionData then
         table.insert(fieldsList, {
             name = "Session 統計",
-            value = string.format("累計時間: %s\n累計場次: %d (勝/負: %d/%d)", 
+            value = string.format("累計時間: %s\n累計場次: %d (勝/負: %d/%d)",
                 formatSessionTime(sessionDuration), _G.Suite7414_MatchesPlayed, _G.Suite7414_Wins, _G.Suite7414_Losses),
             inline = false
         })
@@ -261,7 +339,7 @@ local function sendDiscordWebhook(isVictory, wavesBeaten)
     end
 
     local embed = {
-        title = "Iron Rail Defense 戰報",
+        title = "Sorcerer Tower Defense 戰報",
         color = isVictory and 3066993 or 15158332,
         fields = fieldsList,
         footer = {
