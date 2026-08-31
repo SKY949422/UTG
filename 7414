@@ -50,7 +50,7 @@ local UserConfig = {
     notifyStageFinished = true,
     notifySessionData = true,
     onlyMentionRare = false,
-    webhookHideName = true
+    webhookHideName = false
 }
 
 local isRecording = false
@@ -116,10 +116,10 @@ local function formatSessionTime(seconds)
 end
 
 -- --------------------------------------------------------
--- 2. Discord Webhook 戰報推播
+-- 2. Discord Webhook 戰報推播 (自訂排版版)
 -- --------------------------------------------------------
 local trackedValues = {
-    "Coins", "Gems", "Snowflakes", "StrongestCrate", "BoosterCrate", "CurseCrate",
+    "Coins", "Gems", "Exp", "Standard", "Wins", "Snowflakes", "StrongestCrate", "BoosterCrate", "CurseCrate",
     "CursedBrain", "CursedChain", "DivineWheel", "ReverseEnergyShard", "EpicShard",
     "LegendaryShard", "MythicShard", "LuckBoost", "CoinBoost", "CasinoCoins",
     "CasinoTokens", "AnniversaryCoins", "Candies", "Ducats", "CullingPoints",
@@ -128,12 +128,28 @@ local trackedValues = {
 
 local function snapshotCurrencies()
     initialCurrencies = {}
-    for _, name in ipairs(trackedValues) do
-        local obj = LocalPlayer:FindFirstChild(name)
-        if obj then
-            initialCurrencies[name] = obj.Value
+    local function recordVal(name, val)
+        if initialCurrencies[name] == nil then
+            initialCurrencies[name] = val
         end
     end
+
+    for _, name in ipairs(trackedValues) do
+        local obj = LocalPlayer:FindFirstChild(name)
+        if obj and obj:IsA("ValueBase") then recordVal(name, obj.Value) end
+    end
+
+    local function scan(container)
+        if not container then return end
+        for _, child in ipairs(container:GetChildren()) do
+            if child:IsA("ValueBase") then
+                recordVal(child.Name, child.Value)
+            end
+        end
+    end
+
+    scan(LocalPlayer:FindFirstChild("leaderstats"))
+    scan(LocalPlayer:FindFirstChild("Currencies"))
 end
 
 local function sendDiscordWebhook(isVictory, wavesBeaten)
@@ -144,56 +160,91 @@ local function sendDiscordWebhook(isVictory, wavesBeaten)
 
     local matchDuration = os.time() - matchStartTime
     local sessionDuration = os.time() - _G.Suite7414_SessionStart
-    local mapName = (workspace:FindFirstChild("Info") and workspace.Info:FindFirstChild("Map") and workspace.Info.Map.Value) or "Unknown Map"
+    local mapName = (workspace:FindFirstChild("Info") and workspace.Info:FindFirstChild("Map") and workspace.Info.Map.Value)
+        or (workspace:FindFirstChild("Map") and workspace.Map:FindFirstChildOfClass("Model") and workspace.Map:FindFirstChildOfClass("Model").Name)
+        or "GroundTowerPoints"
 
     local rewardsText = ""
     local isRareDrop = false
+    local processedKeys = {}
+
+    local function checkAndAppend(name, currentVal)
+        if processedKeys[name] then return end
+        processedKeys[name] = true
+
+        local initVal = initialCurrencies[name] or currentVal
+        local lowerName = string.lower(name)
+
+        -- Wins 專屬處理：不顯示 +1，直接顯示總共多少
+        if lowerName == "wins" or lowerName == "win" then
+            rewardsText = rewardsText .. string.format("• %s: %s\n", name, tostring(currentVal))
+        elseif typeof(currentVal) == "number" then
+            local delta = currentVal - initVal
+            if delta > 0 then
+                rewardsText = rewardsText .. string.format("• %s: +%s (%s)\n", name, tostring(delta), tostring(currentVal))
+                if name == "DroppedFingers" or name:find("Crate") or name:find("Shard") or name:find("Wheel") or name:find("Brain") or name:find("Gem") or name:find("Token") then
+                    isRareDrop = true
+                end
+            end
+        elseif typeof(currentVal) == "string" and currentVal ~= "" and currentVal ~= "None" and currentVal ~= initVal then
+            rewardsText = rewardsText .. string.format("• %s: +1 (%s)\n", name, currentVal)
+            isRareDrop = true
+        end
+    end
 
     for _, name in ipairs(trackedValues) do
         local obj = LocalPlayer:FindFirstChild(name)
-        if obj then
-            local currentVal = obj.Value
-            local initVal = initialCurrencies[name] or currentVal
+        if obj and obj:IsA("ValueBase") then checkAndAppend(name, obj.Value) end
+    end
 
-            if typeof(currentVal) == "number" then
-                local delta = currentVal - initVal
-                if delta > 0 then
-                    rewardsText = rewardsText .. string.format("+%s %s [%s]\n", tostring(delta), name, tostring(currentVal))
-                    if name == "DroppedFingers" or name:find("Crate") or name:find("Shard") or name:find("Wheel") or name:find("Brain") then
-                        isRareDrop = true
-                    end
-                end
-            elseif typeof(currentVal) == "string" and currentVal ~= "" and currentVal ~= "None" then
-                if currentVal ~= initVal then
-                    rewardsText = rewardsText .. string.format("+1 %s (%s)\n", name, currentVal)
-                    isRareDrop = true
-                end
+    local function scanAndAppend(container)
+        if not container then return end
+        for _, child in ipairs(container:GetChildren()) do
+            if child:IsA("ValueBase") then
+                checkAndAppend(child.Name, child.Value)
             end
         end
     end
 
-    if rewardsText == "" then rewardsText = "None (No Extra Drops)" end
+    scanAndAppend(LocalPlayer:FindFirstChild("leaderstats"))
+    scanAndAppend(LocalPlayer:FindFirstChild("Currencies"))
+
+    if rewardsText == "" then rewardsText = "• 無 (No Extra Drops)" end
 
     local playerName = UserConfig.webhookHideName and ("||" .. LocalPlayer.Name .. "||") or LocalPlayer.Name
-    local resultTitle = string.format("[%s] - %s (Wave %s)", mapName, isVictory and "Victory" or "Defeat", tostring(wavesBeaten or 0))
+    local statusText = string.format("結果: %s\n地圖: %s\n耗時: %s", 
+        isVictory and "勝利 (Victory)" or "失敗 (Defeat)", 
+        mapName, 
+        formatTime(matchDuration)
+    )
 
     local fieldsList = {
         {
-            name = "Name",
+            name = "玩家",
             value = playerName,
+            inline = true
+        },
+        {
+            name = "難度/詞條",
+            value = "Survival / None",
+            inline = true
+        },
+        {
+            name = "戰鬥狀態",
+            value = statusText,
             inline = false
         },
         {
-            name = "Result",
-            value = string.format("%s\n- Time: %s\n- Reward:\n%s", resultTitle, formatTime(matchDuration), rewardsText),
+            name = "獲得獎勵",
+            value = rewardsText,
             inline = false
         }
     }
 
     if UserConfig.notifySessionData then
         table.insert(fieldsList, {
-            name = "Session",
-            value = string.format("Session Time: %s\nMatches Played: %d\nWin/Loss Ratio: %d:%d", 
+            name = "Session 統計",
+            value = string.format("累計時間: %s\n累計場次: %d (勝/負: %d/%d)", 
                 formatSessionTime(sessionDuration), _G.Suite7414_MatchesPlayed, _G.Suite7414_Wins, _G.Suite7414_Losses),
             inline = false
         })
@@ -210,7 +261,7 @@ local function sendDiscordWebhook(isVictory, wavesBeaten)
     end
 
     local embed = {
-        title = "Sorcerer Tower Defense",
+        title = "Iron Rail Defense 戰報",
         color = isVictory and 3066993 or 15158332,
         fields = fieldsList,
         footer = {
@@ -249,7 +300,6 @@ local function getInstancePosition(inst)
     return pos
 end
 
--- ★ 強化鎖定：只找屬於自己且距離最近的塔
 local function findNearestTower(targetPos, maxDist)
     local bestTower = nil
     local minDistance = maxDist or 5
@@ -540,7 +590,7 @@ task.spawn(function()
 end)
 
 -- --------------------------------------------------------
--- 6. 巨集核心執行引擎 (★ 取消超時限制，錢夠立刻秒升！)
+-- 6. 巨集核心執行引擎
 -- --------------------------------------------------------
 runPlayMacro = function(st)
     if isRecording then
@@ -566,7 +616,6 @@ runPlayMacro = function(st)
                     playCtrl.SetDesc(string.format("▶ 執行中 (%d/%d 步)...", i, #recordedActions))
                 end
 
-                -- 等待時間壓縮
                 if step.delay > 0 then
                     local targetWait = 0.2
                     if UserConfig.smartFastMode then
@@ -587,12 +636,10 @@ runPlayMacro = function(st)
                 local functionsFolder = ReplicatedStorage:FindFirstChild("Functions")
                 if not functionsFolder then break end
 
-                -- ★ 放塔：持續等錢，錢一夠立刻放
                 if step.type == "Place" then
                     local spawnFunc = functionsFolder:FindFirstChild("SpawnNewTower")
                     if spawnFunc then
                         while isPlaying and _G.Suite7414_NewGame_Running do
-                            -- 檢查遊戲是否已經結束
                             local infoFolder = workspace:FindFirstChild("Info")
                             local msg = infoFolder and infoFolder:FindFirstChild("Message") and infoFolder.Message.Value or ""
                             if msg == "VICTORY" or msg == "GAME OVER" then break end
@@ -608,11 +655,10 @@ runPlayMacro = function(st)
                                 task.wait(0.5)
                                 break
                             end
-                            task.wait(0.4) -- 錢不夠時每 0.4 秒檢測一次
+                            task.wait(0.4)
                         end
                     end
 
-                -- ★ 升級：持續等錢，10 萬金幣一到帳 0.1 秒秒升！
                 elseif step.type == "Upgrade" then
                     local upgradeFunc = functionsFolder:FindFirstChild("UpgradeTower")
                     if upgradeFunc then
@@ -630,11 +676,11 @@ runPlayMacro = function(st)
                                 
                                 if res then
                                     print(string.format("[Macro 成功升級] (%d/%d)", i, #recordedActions))
-                                    task.wait(0.6) -- 升級完成給予 0.6 秒模型刷新防超升
+                                    task.wait(0.6)
                                     break
                                 end
                             end
-                            task.wait(0.4) -- ★ 永不超時放棄！只要存到錢立刻升級！
+                            task.wait(0.4)
                         end
                     end
 
@@ -1345,7 +1391,7 @@ for i, tab in ipairs(navTabs) do
     btn.Size = UDim2.new(1, -16, 0, 36)
     btn.Position = UDim2.new(0, 8, 0, 60 + (idx - 1) * 42)
     btn.BackgroundColor3 = (idx == 1) and Color3.fromRGB(22, 26, 33) or Color3.fromRGB(11, 13, 17)
-    btn.Text = "   " .. tab.Name
+    btn.Text = "    " .. tab.Name
     btn.TextColor3 = (idx == 1) and Color3.fromRGB(240, 245, 250) or Color3.fromRGB(150, 155, 165)
     btn.TextSize = 12
     btn.Font = Enum.Font.SourceSansBold
