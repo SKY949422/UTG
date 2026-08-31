@@ -142,7 +142,8 @@ local function extractStateCurrencies(data)
         if typeof(v) == "number" then cur[k] = v end
     end
 
-    add("Money", data.Coins or data.Money)
+    -- 嚴格使用 Coins 與 Gems
+    add("Coins", data.Coins)
     add("Gems", data.Gems)
     add("Snowflakes", data.Snowflakes)
     add("CasinoCoins", data.CasinoCoins)
@@ -170,8 +171,9 @@ local function extractStateCurrencies(data)
     return cur
 end
 
+-- 排除遊戲內放塔專用的 Money / Cash / Wins
 local trackedValues = {
-    "Money", "Coins", "Gems", "Exp", "Standard", "Snowflakes", "StrongestCrate", "BoosterCrate", "CurseCrate",
+    "Coins", "Gems", "Exp", "Standard", "Snowflakes", "StrongestCrate", "BoosterCrate", "CurseCrate",
     "CursedBrain", "CursedChain", "DivineWheel", "ReverseEnergyShard", "EpicShard",
     "LegendaryShard", "MythicShard", "LuckBoost", "CoinBoost", "CasinoCoins",
     "CasinoTokens", "AnniversaryCoins", "Candies", "Ducats", "CullingPoints",
@@ -183,8 +185,11 @@ local function snapshotCurrencies()
     initialStateData = extractStateCurrencies(getGameStateData())
 
     local function recordVal(name, val)
-        if initialCurrencies[name] == nil then
-            initialCurrencies[name] = val
+        local lower = string.lower(name)
+        if lower ~= "money" and lower ~= "cash" and lower ~= "wins" and lower ~= "win" then
+            if initialCurrencies[name] == nil then
+                initialCurrencies[name] = val
+            end
         end
     end
 
@@ -225,29 +230,24 @@ local function sendDiscordWebhook(isVictory, wavesBeaten, isTest)
 
     local function addRewardEntry(name, delta, total)
         local lower = string.lower(name)
-        -- 完全過濾掉 Wins
-        if lower == "wins" or lower == "win" then return end
-        
-        -- 統一 Money 與 Coins 命名
-        local displayKey = (lower == "coins" or lower == "money") and "Money" or name
-        if processedKeys[displayKey] then return end
-        processedKeys[displayKey] = true
+        if lower == "money" or lower == "cash" or lower == "wins" or lower == "win" then return end
+        if processedKeys[name] then return end
+        processedKeys[name] = true
 
-        table.insert(rewardsList, string.format("• %s: +%s (%s)", displayKey, tostring(delta), tostring(total)))
+        table.insert(rewardsList, string.format("• %s: +%s (%s)", name, tostring(delta), tostring(total)))
         if name == "DroppedFingers" or name:find("Crate") or name:find("Shard") or name:find("Wheel") or name:find("Brain") or name:find("Gem") or name:find("Token") then
             isRareDrop = true
         end
     end
 
-    -- 1. 優先比對 State 模組中的真實總資產
+    -- 1. 優先比對 State 模組中的真實總資產 (Coins, Gems 等)
     for key, currentVal in pairs(currentStateData) do
         local initVal = initialStateData[key] or currentVal
         local stateDelta = currentVal - initVal
         
-        local altKey = (key == "Money") and "Coins" or key
-        local localObj = LocalPlayer:FindFirstChild(key) or LocalPlayer:FindFirstChild(altKey) 
-            or (LocalPlayer:FindFirstChild("leaderstats") and (LocalPlayer.leaderstats:FindFirstChild(key) or LocalPlayer.leaderstats:FindFirstChild(altKey)))
-            or (LocalPlayer:FindFirstChild("Currencies") and (LocalPlayer.Currencies:FindFirstChild(key) or LocalPlayer.Currencies:FindFirstChild(altKey)))
+        local localObj = LocalPlayer:FindFirstChild(key) 
+            or (LocalPlayer:FindFirstChild("leaderstats") and LocalPlayer.leaderstats:FindFirstChild(key))
+            or (LocalPlayer:FindFirstChild("Currencies") and LocalPlayer.Currencies:FindFirstChild(key))
         
         local matchDelta = (localObj and localObj:IsA("ValueBase") and typeof(localObj.Value) == "number") and localObj.Value or 0
 
@@ -259,12 +259,10 @@ local function sendDiscordWebhook(isVictory, wavesBeaten, isTest)
         end
     end
 
-    -- 2. 補齊 LocalPlayer / leaderstats 上其他未在 State 列出的獎勵項目
+    -- 2. 補齊 LocalPlayer 上其他結算掉落項目
     for _, name in ipairs(trackedValues) do
         local lower = string.lower(name)
-        local displayKey = (lower == "coins" or lower == "money") and "Money" or name
-
-        if not processedKeys[displayKey] and lower ~= "wins" and lower ~= "win" then
+        if not processedKeys[name] and lower ~= "money" and lower ~= "cash" and lower ~= "wins" and lower ~= "win" then
             local obj = LocalPlayer:FindFirstChild(name) 
                 or (LocalPlayer:FindFirstChild("leaderstats") and LocalPlayer.leaderstats:FindFirstChild(name))
                 or (LocalPlayer:FindFirstChild("Currencies") and LocalPlayer.Currencies:FindFirstChild(name))
@@ -276,24 +274,24 @@ local function sendDiscordWebhook(isVictory, wavesBeaten, isTest)
                 if typeof(currentVal) == "number" then
                     local delta = currentVal - initVal
                     if delta > 0 then
-                        addRewardEntry(displayKey, delta, currentVal)
+                        addRewardEntry(name, delta, currentVal)
                     elseif currentVal > 0 and (initialCurrencies[name] == nil or initialCurrencies[name] == 0) then
-                        addRewardEntry(displayKey, currentVal, currentVal)
+                        addRewardEntry(name, currentVal, currentVal)
                     end
                 elseif typeof(currentVal) == "string" and currentVal ~= "" and currentVal ~= "None" and currentVal ~= initVal then
                     table.insert(rewardsList, string.format("• %s: +1 (%s)", name, currentVal))
-                    processedKeys[displayKey] = true
+                    processedKeys[name] = true
                     isRareDrop = true
                 end
             end
         end
     end
 
-    -- 測試按鈕時若無變更，顯示完整模擬數據
+    -- 測試按鈕模擬數據
     if isTest and #rewardsList == 0 then
-        local currentMoney = currentStateData.Money or 301630
-        local currentGems = currentStateData.Gems or 0
-        table.insert(rewardsList, string.format("• Money: +3000 (%s)", tostring(currentMoney + 3000)))
+        local currentCoins = currentStateData.Coins or 550
+        local currentGems = currentStateData.Gems or 300
+        table.insert(rewardsList, string.format("• Coins: +3000 (%s)", tostring(currentCoins + 3000)))
         table.insert(rewardsList, string.format("• Gems: +300 (%s)", tostring(currentGems + 300)))
     end
 
