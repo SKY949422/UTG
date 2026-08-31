@@ -34,6 +34,7 @@ local macroList = {}
 -- 全域持久化設定
 local UserConfig = {
     currentMacro = "Default",
+    difficulty = "Hard",
     autoReplay = true,
     autoSkip = true,
     autoPlayMacro = true,
@@ -142,6 +143,7 @@ local function extractStateCurrencies(data)
     end
 
     add("Coins", data.Coins)
+    add("Money", data.Coins)
     add("Gems", data.Gems)
     add("Snowflakes", data.Snowflakes)
     add("CasinoCoins", data.CasinoCoins)
@@ -170,7 +172,7 @@ local function extractStateCurrencies(data)
 end
 
 local trackedValues = {
-    "Coins", "Gems", "Exp", "Standard", "Wins", "Snowflakes", "StrongestCrate", "BoosterCrate", "CurseCrate",
+    "Money", "Coins", "Gems", "Exp", "Standard", "Wins", "Snowflakes", "StrongestCrate", "BoosterCrate", "CurseCrate",
     "CursedBrain", "CursedChain", "DivineWheel", "ReverseEnergyShard", "EpicShard",
     "LegendaryShard", "MythicShard", "LuckBoost", "CoinBoost", "CasinoCoins",
     "CasinoTokens", "AnniversaryCoins", "Candies", "Ducats", "CullingPoints",
@@ -237,7 +239,7 @@ local function sendDiscordWebhook(isVictory, wavesBeaten)
         end
     end
 
-    -- 優先對比 State 模組中的真實總資產
+    -- 優先比對 State 模組中的真實總資產
     for key, currentVal in pairs(currentStateData) do
         local initVal = initialStateData[key] or currentVal
         local stateDelta = currentVal - initVal
@@ -247,13 +249,12 @@ local function sendDiscordWebhook(isVictory, wavesBeaten)
         if stateDelta > 0 then
             addRewardEntry(key, stateDelta, currentVal)
         elseif matchDelta > 0 then
-            -- 若結算時 State 尚未即時寫入，以 State初始值 + 本局獎勵 自動計算真實總額
             local realTotal = initVal + matchDelta
             addRewardEntry(key, matchDelta, realTotal)
         end
     end
 
-    -- 補齊其他 LocalPlayer 上未列於 State 的獎勵項目 (如 Exp, Wins, Crates 等)
+    -- 補齊其他 LocalPlayer 上未列於 State 的獎勵項目
     for _, name in ipairs(trackedValues) do
         if not processedKeys[name] then
             local obj = LocalPlayer:FindFirstChild(name) or (LocalPlayer:FindFirstChild("leaderstats") and LocalPlayer.leaderstats:FindFirstChild(name))
@@ -280,7 +281,6 @@ local function sendDiscordWebhook(isVictory, wavesBeaten)
         end
     end
 
-    -- 若無專屬 Wins 物件，補上全局統計總勝場
     if not processedKeys["Wins"] and not processedKeys["wins"] and isVictory then
         local totalWins = _G.Suite7414_Wins
         table.insert(rewardsList, string.format("• Wins: %d", totalWins))
@@ -289,10 +289,9 @@ local function sendDiscordWebhook(isVictory, wavesBeaten)
     local rewardsText = #rewardsList > 0 and table.concat(rewardsList, "\n") or "• 無 (No Extra Drops)"
     local playerName = UserConfig.webhookHideName and ("||" .. LocalPlayer.Name .. "||") or LocalPlayer.Name
 
-    local statusText = string.format("結果: %s\n地圖: %s (Wave %s)\n耗時: %s",
+    local statusText = string.format("結果: %s\n地圖: %s\n耗時: %s",
         isVictory and "勝利 (Victory)" or "失敗 (Defeat)",
         mapName,
-        tostring(wavesBeaten or 20),
         formatTime(matchDuration)
     )
 
@@ -303,8 +302,8 @@ local function sendDiscordWebhook(isVictory, wavesBeaten)
             inline = true
         },
         {
-            name = "難度/詞條",
-            value = "Normal / None",
+            name = "難度",
+            value = UserConfig.difficulty or "Hard",
             inline = true
         },
         {
