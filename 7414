@@ -1,5 +1,5 @@
 -- ========================================================
--- [ 7414 TD MACRO SUITE - STD 等錢秒升 + Webhook 終極版 ]
+-- [ 7414 TD MACRO SUITE - STD 等錢秒升 + Webhook 粉色主題版 ]
 -- ========================================================
 
 -- 全域線程銷毀守衛
@@ -31,7 +31,7 @@ local CONFIG_FILE_PATH = FOLDER_NAME .. "/config.json"
 local currentMacroName = "Default"
 local macroList = {}
 
--- 全域持久化設定
+-- 全域持久化設定 (預設粉色主題: 255, 105, 180)
 local UserConfig = {
     currentMacro = "Default",
     difficulty = "Hard",
@@ -41,7 +41,7 @@ local UserConfig = {
     smartFastMode = true,
     toggleKey = "RightControl",
     mobileToggle = true,
-    uiColor = "0, 200, 120",
+    uiColor = "255, 105, 180",
     bgImageId = "",
     macroScale = 1.0,
     
@@ -142,7 +142,6 @@ local function extractStateCurrencies(data)
         if typeof(v) == "number" then cur[k] = v end
     end
 
-    -- 嚴格使用 Coins 與 Gems
     add("Coins", data.Coins)
     add("Gems", data.Gems)
     add("Snowflakes", data.Snowflakes)
@@ -171,7 +170,7 @@ local function extractStateCurrencies(data)
     return cur
 end
 
--- 排除遊戲內放塔專用的 Money / Cash / Wins
+-- 徹底剔除 Money, Cash, Wins
 local trackedValues = {
     "Coins", "Gems", "Exp", "Standard", "Snowflakes", "StrongestCrate", "BoosterCrate", "CurseCrate",
     "CursedBrain", "CursedChain", "DivineWheel", "ReverseEnergyShard", "EpicShard",
@@ -240,22 +239,25 @@ local function sendDiscordWebhook(isVictory, wavesBeaten, isTest)
         end
     end
 
-    -- 1. 優先比對 State 模組中的真實總資產 (Coins, Gems 等)
+    -- 1. 比對 State 模組中的真實總資產 (Coins, Gems 等)
     for key, currentVal in pairs(currentStateData) do
-        local initVal = initialStateData[key] or currentVal
-        local stateDelta = currentVal - initVal
-        
-        local localObj = LocalPlayer:FindFirstChild(key) 
-            or (LocalPlayer:FindFirstChild("leaderstats") and LocalPlayer.leaderstats:FindFirstChild(key))
-            or (LocalPlayer:FindFirstChild("Currencies") and LocalPlayer.Currencies:FindFirstChild(key))
-        
-        local matchDelta = (localObj and localObj:IsA("ValueBase") and typeof(localObj.Value) == "number") and localObj.Value or 0
+        local lower = string.lower(key)
+        if lower ~= "money" and lower ~= "cash" and lower ~= "wins" and lower ~= "win" then
+            local initVal = initialStateData[key] or currentVal
+            local stateDelta = currentVal - initVal
+            
+            local localObj = LocalPlayer:FindFirstChild(key) 
+                or (LocalPlayer:FindFirstChild("leaderstats") and LocalPlayer.leaderstats:FindFirstChild(key))
+                or (LocalPlayer:FindFirstChild("Currencies") and LocalPlayer.Currencies:FindFirstChild(key))
+            
+            local matchDelta = (localObj and localObj:IsA("ValueBase") and typeof(localObj.Value) == "number") and localObj.Value or 0
 
-        if stateDelta > 0 then
-            addRewardEntry(key, stateDelta, currentVal)
-        elseif matchDelta > 0 then
-            local realTotal = initVal + matchDelta
-            addRewardEntry(key, matchDelta, realTotal)
+            if stateDelta > 0 then
+                addRewardEntry(key, stateDelta, currentVal)
+            elseif matchDelta > 0 then
+                local realTotal = initVal + matchDelta
+                addRewardEntry(key, matchDelta, realTotal)
+            end
         end
     end
 
@@ -290,7 +292,7 @@ local function sendDiscordWebhook(isVictory, wavesBeaten, isTest)
     -- 測試按鈕模擬數據
     if isTest and #rewardsList == 0 then
         local currentCoins = currentStateData.Coins or 550
-        local currentGems = currentStateData.Gems or 300
+        local currentGems = currentStateData.Gems or 0
         table.insert(rewardsList, string.format("• Coins: +3000 (%s)", tostring(currentCoins + 3000)))
         table.insert(rewardsList, string.format("• Gems: +300 (%s)", tostring(currentGems + 300)))
     end
@@ -348,7 +350,7 @@ local function sendDiscordWebhook(isVictory, wavesBeaten, isTest)
 
     local embed = {
         title = "Sorcerer Tower Defense 戰報",
-        color = isVictory and 3066993 or 15158332,
+        color = isVictory and 16738740 or 15158332, -- 粉色勝利高亮
         fields = fieldsList,
         footer = {
             text = "7414 TD Suite • " .. os.date("%Y/%m/%d %X")
@@ -801,7 +803,7 @@ runPlayMacro = function(st)
 end
 
 -- --------------------------------------------------------
--- 7. UI 介面構建
+-- 7. UI 介面構建 (粉色主題渲染)
 -- --------------------------------------------------------
 local parentGui = (gethui and gethui()) or CoreGui:FindFirstChild("RobloxGui") or LocalPlayer:WaitForChild("PlayerGui")
 if parentGui:FindFirstChild("Suite7414UI") then
@@ -853,7 +855,7 @@ brandHeader.Parent = sidebar
 local brandBadge = Instance.new("TextLabel")
 brandBadge.Size = UDim2.new(0, 26, 0, 26)
 brandBadge.Position = UDim2.new(0, 12, 0, 12)
-brandBadge.BackgroundColor3 = Color3.fromRGB(0, 200, 120)
+brandBadge.BackgroundColor3 = Color3.fromRGB(255, 105, 180)
 brandBadge.Text = "🐷"
 brandBadge.TextSize = 13
 brandBadge.ZIndex = 3
@@ -958,7 +960,7 @@ end
 
 applyCustomTheme = function()
     local r, g, b = UserConfig.uiColor:match("(%d+),%s*(%d+),%s*(%d+)")
-    local targetColor = (r and g and b) and Color3.fromRGB(tonumber(r), tonumber(g), tonumber(b)) or Color3.fromRGB(0, 200, 120)
+    local targetColor = (r and g and b) and Color3.fromRGB(tonumber(r), tonumber(g), tonumber(b)) or Color3.fromRGB(255, 105, 180)
     
     brandBadge.BackgroundColor3 = targetColor
     brandBadge.TextColor3 = Color3.fromRGB(10, 20, 15)
@@ -1026,7 +1028,7 @@ local function createSwitch(parent, title, desc, defaultVal, callback, order)
     local switchBox = Instance.new("Frame")
     switchBox.Size = UDim2.new(0, 44, 0, 20)
     switchBox.Position = UDim2.new(1, -54, 0.5, -10)
-    switchBox.BackgroundColor3 = defaultVal and Color3.fromRGB(0, 200, 120) or Color3.fromRGB(35, 40, 48)
+    switchBox.BackgroundColor3 = defaultVal and Color3.fromRGB(255, 105, 180) or Color3.fromRGB(35, 40, 48)
     switchBox.BorderSizePixel = 0
     switchBox.ZIndex = 2
     switchBox.Parent = btn
@@ -1049,7 +1051,7 @@ local function createSwitch(parent, title, desc, defaultVal, callback, order)
     function ctrl.Set(v)
         state = v
         local r, g, b = UserConfig.uiColor:match("(%d+),%s*(%d+),%s*(%d+)")
-        local targetColor = (r and g and b) and Color3.fromRGB(tonumber(r), tonumber(g), tonumber(b)) or Color3.fromRGB(0, 200, 120)
+        local targetColor = (r and g and b) and Color3.fromRGB(tonumber(r), tonumber(g), tonumber(b)) or Color3.fromRGB(255, 105, 180)
 
         if state then
             switchBox.BackgroundColor3 = targetColor
@@ -1127,7 +1129,7 @@ updateMacroListView = function()
     end
     for _, name in ipairs(macroList) do
         local r, g, b = UserConfig.uiColor:match("(%d+),%s*(%d+),%s*(%d+)")
-        local targetColor = (r and g and b) and Color3.fromRGB(tonumber(r), tonumber(g), tonumber(b)) or Color3.fromRGB(0, 200, 120)
+        local targetColor = (r and g and b) and Color3.fromRGB(tonumber(r), tonumber(g), tonumber(b)) or Color3.fromRGB(255, 105, 180)
 
         local btn = Instance.new("TextButton")
         btn.Size = UDim2.new(0, 110, 0, 30)
@@ -1331,7 +1333,7 @@ local testCard = createBlock(pageWebhook, "", 40, 3)
 local testBtn = Instance.new("TextButton")
 testBtn.Size = UDim2.new(1, -20, 0, 28)
 testBtn.Position = UDim2.new(0, 10, 0.5, -14)
-testBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 120)
+testBtn.BackgroundColor3 = Color3.fromRGB(255, 105, 180)
 testBtn.Text = "🪄 Test Webhook (Click me >.<)"
 testBtn.TextColor3 = Color3.fromRGB(10, 25, 15)
 testBtn.TextSize = 12
@@ -1375,7 +1377,7 @@ local colorInput = Instance.new("TextBox")
 colorInput.Size = UDim2.new(1, -24, 0, 26)
 colorInput.Position = UDim2.new(0, 12, 0, 26)
 colorInput.BackgroundColor3 = Color3.fromRGB(12, 14, 18)
-colorInput.PlaceholderText = "主題 RGB 顏色，例如: 0, 200, 120"
+colorInput.PlaceholderText = "主題 RGB 顏色，例如: 255, 105, 180"
 colorInput.Text = UserConfig.uiColor
 colorInput.TextColor3 = Color3.fromRGB(240, 240, 245)
 colorInput.TextSize = 11
@@ -1431,7 +1433,7 @@ keyBtn.Size = UDim2.new(0, 75, 0, 24)
 keyBtn.Position = UDim2.new(1, -85, 0.5, -12)
 keyBtn.BackgroundColor3 = Color3.fromRGB(35, 40, 48)
 keyBtn.Text = (UserConfig.toggleKey == "RightControl" and "R-Ctrl") or UserConfig.toggleKey
-keyBtn.TextColor3 = Color3.fromRGB(0, 200, 120)
+keyBtn.TextColor3 = Color3.fromRGB(255, 105, 180)
 keyBtn.TextSize = 11
 keyBtn.Font = Enum.Font.SourceSansBold
 keyBtn.ZIndex = 2
@@ -1493,7 +1495,7 @@ for i, tab in ipairs(navTabs) do
         for _, t in ipairs(navTabs) do
             t.Page.Visible = (t == tab)
             local r, g, b = UserConfig.uiColor:match("(%d+),%s*(%d+),%s*(%d+)")
-            local activeColor = (r and g and b) and Color3.fromRGB(tonumber(r), tonumber(g), tonumber(b)) or Color3.fromRGB(0, 200, 120)
+            local activeColor = (r and g and b) and Color3.fromRGB(tonumber(r), tonumber(g), tonumber(b)) or Color3.fromRGB(255, 105, 180)
 
             if t == tab then
                 t.Button.BackgroundColor3 = Color3.fromRGB(22, 26, 33)
@@ -1521,7 +1523,7 @@ mobileBtn.ZIndex = 5
 mobileBtn.Parent = screenGui
 Instance.new("UICorner", mobileBtn).CornerRadius = UDim.new(0, 8)
 local mobStroke = Instance.new("UIStroke", mobileBtn)
-mobStroke.Color = Color3.fromRGB(0, 200, 120)
+mobStroke.Color = Color3.fromRGB(255, 105, 180)
 registerAccent(mobStroke)
 
 mobileBtn.MouseButton1Click:Connect(function()
