@@ -1,5 +1,5 @@
 -- ========================================================
--- [ 7414 TD MACRO SUITE - STD 等錢秒升 + Webhook 粉色主題版 ]
+-- [ 7414 TD MACRO SUITE - STD 等錢秒升 + 背包庫存推播 + 粉色終極版 ]
 -- ========================================================
 
 -- 全域線程銷毀守衛
@@ -63,7 +63,7 @@ local matchStartTime = os.time()
 local initialCurrencies = {}
 local initialStateData = {}
 
-local runPlayMacro
+local runPlayMacro, playCtrl, recordCtrl
 local applyCustomTheme, bgImageLabel, mainFrameRef
 
 -- --------------------------------------------------------
@@ -170,7 +170,6 @@ local function extractStateCurrencies(data)
     return cur
 end
 
--- 徹底剔除 Money, Cash, Wins
 local trackedValues = {
     "Coins", "Gems", "Exp", "Standard", "Snowflakes", "StrongestCrate", "BoosterCrate", "CurseCrate",
     "CursedBrain", "CursedChain", "DivineWheel", "ReverseEnergyShard", "EpicShard",
@@ -350,7 +349,7 @@ local function sendDiscordWebhook(isVictory, wavesBeaten, isTest)
 
     local embed = {
         title = "Sorcerer Tower Defense 戰報",
-        color = isVictory and 16738740 or 15158332, -- 粉色勝利高亮
+        color = isVictory and 16738740 or 15158332,
         fields = fieldsList,
         footer = {
             text = "7414 TD Suite • " .. os.date("%Y/%m/%d %X")
@@ -369,6 +368,106 @@ local function sendDiscordWebhook(isVictory, wavesBeaten, isTest)
                 embeds = {embed}
             })
         })
+    end)
+end
+
+-- ★ 一鍵檢查背包與塔庫存並推播 Webhook
+local function sendInventoryWebhook()
+    if not UserConfig.webhookUrl or UserConfig.webhookUrl:gsub("%s+", "") == "" then
+        warn("[Inventory] 請先填寫有效的 Webhook URL！")
+        return
+    end
+
+    local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+    if not httpRequest then return end
+
+    local data = getGameStateData()
+    if not data then
+        warn("[Inventory] 無法讀取 State 模組數據！")
+        return
+    end
+
+    -- 1. 統計防禦塔庫存 (Towers)
+    local towerLines = {}
+    if data.Towers and typeof(data.Towers) == "table" then
+        for _, towerInfo in pairs(data.Towers) do
+            local name = towerInfo.Name or "Unknown Tower"
+            table.insert(towerLines, string.format("• %s", name))
+        end
+    end
+    table.sort(towerLines)
+    local towersText = #towerLines > 0 and table.concat(towerLines, "\n") or "• 無防禦塔"
+
+    -- 2. 統計道具與特殊素材 (Items / Stock / Evolutions)
+    local itemLines = {}
+    if data.Items and typeof(data.Items) == "table" then
+        for _, itemInfo in pairs(data.Items) do
+            local name = itemInfo.Name or "Item"
+            table.insert(itemLines, string.format("• %s", name))
+        end
+    end
+
+    if data.Stock and typeof(data.Stock) == "table" then
+        for stockName, count in pairs(data.Stock) do
+            if typeof(count) == "number" and count > 0 then
+                table.insert(itemLines, string.format("• %s: %d", stockName, count))
+            end
+        end
+    end
+
+    if data.Evolutions and typeof(data.Evolutions) == "table" then
+        for evoName, count in pairs(data.Evolutions) do
+            if typeof(count) == "number" and count > 0 then
+                table.insert(itemLines, string.format("• %s: %d", evoName, count))
+            end
+        end
+    end
+
+    local itemsText = #itemLines > 0 and table.concat(itemLines, "\n") or "• 無額外道具"
+    local playerName = UserConfig.webhookHideName and ("||" .. LocalPlayer.Name .. "||") or LocalPlayer.Name
+
+    local embed = {
+        title = "🎒 Sorcerer Tower Defense - 玩家背包與庫存",
+        color = 16738740, -- 粉色主題
+        fields = {
+            {
+                name = "玩家",
+                value = playerName,
+                inline = true
+            },
+            {
+                name = "金幣 / 寶石",
+                value = string.format("Coins: %s\nGems: %s", tostring(data.Coins or 0), tostring(data.Gems or 0)),
+                inline = true
+            },
+            {
+                name = "持有角色 / 塔 (Towers)",
+                value = towersText,
+                inline = false
+            },
+            {
+                name = "持有道具 / 箱子庫存 (Items & Stock)",
+                value = itemsText,
+                inline = false
+            }
+        },
+        footer = {
+            text = "7414 TD Suite • " .. os.date("%Y/%m/%d %X")
+        }
+    }
+
+    pcall(function()
+        httpRequest({
+            Url = UserConfig.webhookUrl,
+            Method = "POST",
+            Headers = {["Content-Type"] = "application/json"},
+            Body = HttpService:JSONEncode({
+                username = "7414 Inventory",
+                avatar_url = "https://i.imgur.com/8QpZ5n7.png",
+                embeds = {embed}
+            })
+        })
+        print("[Inventory] 背包庫存已推播至 Discord！")
     end)
 end
 
@@ -1329,23 +1428,43 @@ mentionInput.FocusLost:Connect(function(enter)
     end
 end)
 
-local testCard = createBlock(pageWebhook, "", 40, 3)
+-- Webhook 操作按鈕區塊
+local actionCard = createBlock(pageWebhook, "", 74, 3)
+
 local testBtn = Instance.new("TextButton")
 testBtn.Size = UDim2.new(1, -20, 0, 28)
-testBtn.Position = UDim2.new(0, 10, 0.5, -14)
+testBtn.Position = UDim2.new(0, 10, 0, 6)
 testBtn.BackgroundColor3 = Color3.fromRGB(255, 105, 180)
 testBtn.Text = "🪄 Test Webhook (Click me >.<)"
 testBtn.TextColor3 = Color3.fromRGB(10, 25, 15)
-testBtn.TextSize = 12
+testBtn.TextSize = 11
 testBtn.Font = Enum.Font.SourceSansBold
 testBtn.ZIndex = 2
-testBtn.Parent = testCard
+testBtn.Parent = actionCard
 registerAccent(testBtn)
 Instance.new("UICorner", testBtn).CornerRadius = UDim.new(0, 5)
 
 testBtn.MouseButton1Click:Connect(function()
     print("[Webhook] 發送測試推播中...")
     sendDiscordWebhook(true, 20, true)
+end)
+
+local invBtn = Instance.new("TextButton")
+invBtn.Size = UDim2.new(1, -20, 0, 28)
+invBtn.Position = UDim2.new(0, 10, 0, 38)
+invBtn.BackgroundColor3 = Color3.fromRGB(255, 105, 180)
+invBtn.Text = "🎒 檢查並推播背包庫存 (Send Inventory)"
+invBtn.TextColor3 = Color3.fromRGB(10, 25, 15)
+invBtn.TextSize = 11
+invBtn.Font = Enum.Font.SourceSansBold
+invBtn.ZIndex = 2
+invBtn.Parent = actionCard
+registerAccent(invBtn)
+Instance.new("UICorner", invBtn).CornerRadius = UDim.new(0, 5)
+
+invBtn.MouseButton1Click:Connect(function()
+    print("[Inventory] 正在掃描並發送背包庫存...")
+    sendInventoryWebhook()
 end)
 
 createSectionDivider(pageWebhook, "Notification", 4)
