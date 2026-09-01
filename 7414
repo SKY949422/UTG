@@ -1,5 +1,5 @@
 -- ========================================================
--- [ 7414 TD MACRO SUITE - STD 等錢秒升 + 背包庫存推播 + 粉色終極版 ]
+-- [ 7414 TD MACRO SUITE - STD 等錢秒升 + 背包庫存修正 + 粉色終極版 ]
 -- ========================================================
 
 -- 全域線程銷毀守衛
@@ -31,7 +31,7 @@ local CONFIG_FILE_PATH = FOLDER_NAME .. "/config.json"
 local currentMacroName = "Default"
 local macroList = {}
 
--- 全域持久化設定 (預設粉色主題: 255, 105, 180)
+-- 全域持久化設定 (粉色主題: 255, 105, 180)
 local UserConfig = {
     currentMacro = "Default",
     difficulty = "Hard",
@@ -158,9 +158,6 @@ local function extractStateCurrencies(data)
     if data.Awakens and typeof(data.Awakens) == "table" then
         for k, v in pairs(data.Awakens) do add(k, v) end
     end
-    if data.Stock and typeof(data.Stock) == "table" then
-        for k, v in pairs(data.Stock) do add(k, v) end
-    end
     if data.DisasterIslands and typeof(data.DisasterIslands) == "table" then
         add("ElementalFragments", data.DisasterIslands.ElementalFragments)
         add("LavaCore", data.DisasterIslands.LavaCore)
@@ -170,6 +167,7 @@ local function extractStateCurrencies(data)
     return cur
 end
 
+-- 排除 Money / Wins，精準追蹤永久資產與各類掉落
 local trackedValues = {
     "Coins", "Gems", "Exp", "Standard", "Snowflakes", "StrongestCrate", "BoosterCrate", "CurseCrate",
     "CursedBrain", "CursedChain", "DivineWheel", "ReverseEnergyShard", "EpicShard",
@@ -371,7 +369,7 @@ local function sendDiscordWebhook(isVictory, wavesBeaten, isTest)
     end)
 end
 
--- ★ 一鍵檢查背包與塔庫存並推播 Webhook
+-- ★ 一鍵檢查背包真實庫存 (已排除商店 Stock，精準抓取玩家 Items)
 local function sendInventoryWebhook()
     if not UserConfig.webhookUrl or UserConfig.webhookUrl:gsub("%s+", "") == "" then
         warn("[Inventory] 請先填寫有效的 Webhook URL！")
@@ -387,48 +385,63 @@ local function sendInventoryWebhook()
         return
     end
 
-    -- 1. 統計防禦塔庫存 (Towers)
-    local towerLines = {}
+    -- 1. 統計持有防禦塔庫存 (Towers)
+    local towerCounts = {}
     if data.Towers and typeof(data.Towers) == "table" then
         for _, towerInfo in pairs(data.Towers) do
             local name = towerInfo.Name or "Unknown Tower"
-            table.insert(towerLines, string.format("• %s", name))
+            towerCounts[name] = (towerCounts[name] or 0) + 1
         end
     end
+    local towerLines = {}
+    for name, count in pairs(towerCounts) do
+        table.insert(towerLines, count > 1 and string.format("• %s x%d", name, count) or string.format("• %s", name))
+    end
     table.sort(towerLines)
-    local towersText = #towerLines > 0 and table.concat(towerLines, "\n") or "• 無防禦塔"
+    local towersText = #towerLines > 0 and table.concat(towerLines, "\n") or "• 無持有塔"
 
-    -- 2. 統計道具與特殊素材 (Items / Stock / Evolutions)
-    local itemLines = {}
+    -- 2. 統計持有道具庫存 (僅讀取玩家 Items，排除商店 Stock)
+    local itemCounts = {}
     if data.Items and typeof(data.Items) == "table" then
         for _, itemInfo in pairs(data.Items) do
             local name = itemInfo.Name or "Item"
-            table.insert(itemLines, string.format("• %s", name))
+            itemCounts[name] = (itemCounts[name] or 0) + 1
         end
     end
 
-    if data.Stock and typeof(data.Stock) == "table" then
-        for stockName, count in pairs(data.Stock) do
-            if typeof(count) == "number" and count > 0 then
-                table.insert(itemLines, string.format("• %s: %d", stockName, count))
-            end
-        end
-    end
-
+    -- 額外進化/覺醒素材 (數量大於 0 才計入背包)
     if data.Evolutions and typeof(data.Evolutions) == "table" then
         for evoName, count in pairs(data.Evolutions) do
             if typeof(count) == "number" and count > 0 then
-                table.insert(itemLines, string.format("• %s: %d", evoName, count))
+                itemCounts[evoName] = (itemCounts[evoName] or 0) + count
             end
         end
     end
 
-    local itemsText = #itemLines > 0 and table.concat(itemLines, "\n") or "• 無額外道具"
+    if data.Awakens and typeof(data.Awakens) == "table" then
+        for awkName, count in pairs(data.Awakens) do
+            if typeof(count) == "number" and count > 0 then
+                itemCounts[awkName] = (itemCounts[awkName] or 0) + count
+            end
+        end
+    end
+
+    if typeof(data.SukunaFingers) == "number" and data.SukunaFingers > 0 then
+        itemCounts["SukunaFingers"] = data.SukunaFingers
+    end
+
+    local itemLines = {}
+    for name, count in pairs(itemCounts) do
+        table.insert(itemLines, count > 1 and string.format("• %s x%d", name, count) or string.format("• %s", name))
+    end
+    table.sort(itemLines)
+    local itemsText = #itemLines > 0 and table.concat(itemLines, "\n") or "• 無道具"
+
     local playerName = UserConfig.webhookHideName and ("||" .. LocalPlayer.Name .. "||") or LocalPlayer.Name
 
     local embed = {
-        title = "🎒 Sorcerer Tower Defense - 玩家背包與庫存",
-        color = 16738740, -- 粉色主題
+        title = "🎒 Sorcerer Tower Defense - 玩家背包清單",
+        color = 16738740,
         fields = {
             {
                 name = "玩家",
@@ -446,7 +459,7 @@ local function sendInventoryWebhook()
                 inline = false
             },
             {
-                name = "持有道具 / 箱子庫存 (Items & Stock)",
+                name = "持有道具 / 素材 (Items)",
                 value = itemsText,
                 inline = false
             }
